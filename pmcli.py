@@ -10,6 +10,7 @@ import codecs
 import cStringIO
 import getpass
 from Foundation import CFPreferencesCopyAppValue
+from pprint import pprint
 
 import profilemanager
 
@@ -81,8 +82,8 @@ def do_test(pm, args):
 
 
 def do_add_placeholder(pm, args):
-    usage = "Usage: add_placeholder name (serial|imei|meid|udid)=value [group] [group] ..."
-    if len(args) < 2:
+    usage = "Usage: add_placeholder name (serial|imei|meid|udid)=value [group]"
+    if len(args) not in (2, 3):
         sys.exit(usage)
     name = args[0]
     id_type, equal, ident = args[1].partition("=")
@@ -90,9 +91,22 @@ def do_add_placeholder(pm, args):
         sys.exit(usage)
     if id_type not in ("serial", "imei", "meid", "udid"):
         sys.exit(usage)
-    for group in args[2:]:
+    try:
+        group = args[2]
+    except IndexError:
+        group = None
+    device_id = pm.add_placeholder_device(name, **{id_type: ident})
+    if group:
         pm.add_device_to_group(group, device_id)
-
+    
+def do_delete_device_by_identifier(pm, args):
+    if len(args) != 1:
+        sys.exit("Usage: delete_device_by_identifier device_identifier")
+    device_identifier = args[0]
+    try:
+        pm.delete_device_by_identifier(device_identifier)
+    except profilemanager.PMError as e:
+        print e
 
 def do_import_placeholders(pm, args):
     if len(args) != 1:
@@ -123,6 +137,65 @@ def do_dump_devices(pm, args):
     devices = pm.get_device_details(device_ids)
     with open(output_fname, "w") as f:
         json.dump({"Devices": devices}, f, indent=4)
+    
+
+def do_dump_device_groups(pm, args):
+    if len(args) != 1:
+        sys.exit("Usage: dump_device_groups output.json")
+    output_fname = args[0]
+    group_ids = pm.get_device_group_ids()
+    groups = pm.get_device_group_details(group_ids)
+    with open(output_fname, "w") as f:
+        json.dump({"Groups": groups}, f, indent=4)
+    
+
+def do_dump_device_group_settings(pm, args):
+    if len(args) != 2:
+        sys.exit("Usage: dump_device_group_settings group_name output.json")
+    group_name = args[0]
+    output_fname = args[1]
+    knob_sets = pm.get_profile_knob_sets(group_name)
+    with open(output_fname, "w") as f:
+        json.dump(knob_sets, f, indent=4)
+    
+def do_import_device_group_settings(pm, args):
+    if len(args) != 2:
+        sys.exit("Usage: import_device_group_settings group_name input.json")
+    dest=args[0]
+    json_data=open(args[1])
+    data=json.load(json_data)
+    for knob_set in data:
+        if knob_set == "GeneralKnobSet":
+            continue
+        for knob in data[knob_set]['retrieved']:
+            print "Copying key " + knob_set
+            pm.update_knob_sets(dest, knob_set, knob)
+
+def do_copy_device_group_settings(pm, args):
+    if (len(args) < 2) or (len(args) > 3):
+        sys.exit("Usage: copy_settings source dest [payload]")
+    src_group = args[0]
+    dest = args[1]
+    if len(args) == 3:
+        payload = args[2]
+    else:
+        payload = None
+    source_knob_sets = pm.get_profile_knob_sets(src_group)
+    
+    if payload:
+        try:
+            for knob in source_knob_sets[payload]["retrieved"]:
+                #print "Copying key " + knob
+                pm.update_knob_sets(dest, payload, knob)
+        except KeyError:
+            print("Payload for '%s' not found" % payload)
+    else:
+        for knob_set in source_knob_sets:
+            if knob_set == "GeneralKnobSet":
+                continue
+            for knob in source_knob_sets[knob_set]["retrieved"]:
+                print "Copying key " + knob_set
+                pm.update_knob_sets(dest, knob_set, knob)
     
 
 def do_export_placeholders(pm, args):
