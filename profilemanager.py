@@ -229,7 +229,7 @@ class ProfileManager(object):
     def get_device_details(self, device_ids):
         return self.do_magic({
             "device": {
-                "get_details": [[None, {"ids": device_ids}]]
+                "get_complete_details": [[None, {"ids": device_ids}]]
             }
         })["result"]["device"]["retrieved"]
     
@@ -250,7 +250,12 @@ class ProfileManager(object):
     
     def get_profile_knob_sets(self, group_name):
         group = self.get_group(group_name)
-        return self.do_magic({"profile": {"get_knob_sets": [[group["profiles"]]]}})["result"]
+        if 'profiles' in group:
+            return self.do_magic({"profile": {"get_knob_sets": [[group["profiles"]]]}})["result"]
+        #Somewhere around 3.2.2 key changed to profile
+        if 'profile' in group:
+            return self.do_magic({"profile": {"get_knob_sets": [[group["profile"]]]}})["result"]
+        raise PMError('No Profile for group.')
     
     # Update or Create one "knob" knobname with content data to dest.
     def update_knob_sets(self, group_name, knobname, data):
@@ -259,7 +264,7 @@ class ProfileManager(object):
         except:
             raise PMError("No settings configured for this group. General tab must be configured first.")
         profileid = ddata["GeneralKnobSet"]["retrieved"][0]["profile"]
-        try:
+        if 'retrieved' in ddata[knobname]:
             knobset = ddata[knobname]["retrieved"]
             for knob in knobset:
                 # Some sets don't use PayloadDisplayName, even though it is present.
@@ -278,6 +283,8 @@ class ProfileManager(object):
                     else:
                         knobid = None
                 else:
+                    if 'PayloadUUID' in knob:
+                        PayloadUUID = knob['PayloadUUID']
                     if knob["PayloadDisplayName"] == None:
                         knobid = knob["id"]
                         break
@@ -286,14 +293,17 @@ class ProfileManager(object):
                         break
                     else:
                         knobid = None
-        except:
+        else:
             knobid = None
         data["profile"] = profileid
         if knobid is not None:
             data["id"] = knobid
+            if PayloadUUID:
+                data['PayloadUUID'] = PayloadUUID
             response = self.do_magic({knobname: {"update": [[knobid, data]]}})
         else:
             del data["id"]
+            del data['PayloadUUID']
             response = self.do_magic({knobname: {"create": [[data]]}})
     
     def load_groups(self):
